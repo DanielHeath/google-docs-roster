@@ -6,29 +6,27 @@ Google docs based rostering, with Twilio for SMS via Zapier.
 
 Register a Google, Twilio and Zapier account.
 Create a google docs spreadsheet, then add a script via Tools -> Script Editor -> Blank Script.
-Paste in roster.js from this project and save, then re-load the spreadsheet.
+Paste in roster.js from this project and save.
 
-A 'Roster' menu will appear at the top of the page.
+In google calendar, create all the roster times as events (in your default calendar).
+If two people are needed on duty at the same time, create two events.
+The event title must be 'Nobody' or 'Nobody - Key'.
 
-In google calendar, create all the roster times as events.
-If two people are needed at the same time, create two events.
-The event title must start with 'Nobody'.
-
-Click Roster -> Setup to
- * Import the calendar into the spreadsheet
- * Create a google form which you can send to your members
+Re-load the spreadsheet; a 'Roster' menu will appear at the top of the page.
+Click Roster -> 'Start new term' in this menu, then select
+the start & end dates for the roster term.
+This will fill the spreadsheet with the entries in the calendar, and
+create a form in your google drive account.
 
 Filling in the form will alter the calendar and the spreadsheet.
 
 Changes to the spreadsheet *WILL BE LOST* whenever someone fills in the form.
 
-FIXME: Alter the script so that when the sheet changes it wipes things out.
-
 Test the form created by this (go to google drive to find the form).
 
 Once you fill out one entry, it should update the calendar *and* the spreadsheet.
 
-Go to Zapier and create a "Google Calendar <-> Twilio SMS" integration.
+Go to Zapier and create a "Google Calendar <-> Twilio SMS" integration to send SMS when an event is coming up. TODO: screenshots of how that works.
 
 
 

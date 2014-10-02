@@ -1,10 +1,10 @@
 // Link spreadsheet menu when loaded.
 function onOpen() {
   var menu = [
-    {name: 'Setup', functionName: 'InitialConfig'},
-    {name: 'Test: Re-import Calendar', functionName: 'PopulateSheetFromCalendar'},
-    {name: 'Test: Create Form', functionName: 'UpdateFormList'}
-  ];
+    {name: 'Start new term', functionName: 'PopulateSheetFromCalendar'},
+    {name: 'Update spreadsheet from calendar', functionName: 'runImport'},
+    {name: 'Populate signup form (should happen automatically)', functionName: 'UpdateFormList'}
+  ]
   SpreadsheetApp.getActive().addMenu('Rostering', menu);
 }
 
@@ -256,6 +256,7 @@ function onFormSubmit(e) {
     // Release the lock so that other processes can continue.
     lock.releaseLock();
     UpdateFormList();
+    runImport();
   }
 }
 
@@ -298,10 +299,20 @@ function runImport() {
     }
 
     var sheet = storedSpreadSheet();
+    try {
+      // Attempt to focus, if we're not running interactively this will fail.
+      SpreadsheetApp
+        .getActiveSpreadsheet()
+        .getSheetByName(sheet.getName())
+        .activate();
+    } catch (e) {
+    }
+
     sheet.getActiveRange().clear(); // get rid of whatever is already there.
     sheet.getRange(1,1,eventarray.length,eventarray[0].length).setValues(eventarray);
     sheet.setColumnWidth(1, 450);sheet.setColumnWidth(2, 150);sheet.setColumnWidth(3, 150);sheet.setColumnWidth(4, 250);sheet.setColumnWidth(5, 90);
     sheet.setFrozenRows(1);
+    UpdateFormList();
   } else {
     var startstring = Utilities.formatDate(startDate, FUS1, "MMM-dd-yyyy");
     var endstring = Utilities.formatDate(endDate, FUS1, "MMM-dd-yyyy");
