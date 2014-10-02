@@ -1,147 +1,254 @@
-var FUS1=new Date().toString().substr(25,6)+':00';
+// Link spreadsheet menu when loaded.
 function onOpen() {
   var menu = [
-    // {name: 'Replace roster from calendar', functionName: 'setUpRoster_'},
-    {name: 'Import Calendar', functionName: 'Cal_to_sheet'},
-    {name: 'Create Form', functionName: 'CreateForm '}
+    {name: 'Setup', functionName: 'InitialConfig'},
+    {name: 'Test: Re-import Calendar', functionName: 'PopulateSheetFromCalendar'},
+    {name: 'Test: Create Form', functionName: 'CreateForm'}
   ];
   SpreadsheetApp.getActive().addMenu('Rostering', menu);
-
-  ss.addMenu("Calendar Uitilities", menuEntries);
-
- var ui = DocumentApp.getUi();
- var response = ui.prompt('Getting to know you', 'May I know your name?', ui.ButtonSet.YES_NO);
-
 }
 
 /**
  * Creates a Google Form that allows respondents to select which roster
  * sessions they can make it to.
- *
- * @param {Spreadsheet} ss The spreadsheet that contains the conference data.
- * @param {String[][]} values Cell values for the spreadsheet range.
  */
-function setUpForm_(ss, values) {
-
-  // Create the form and add a multiple-choice question for each timeslot.
-  var form = FormApp.create('Conference Form');
-
-  var item = form.addListItem();
-  item.setTitle('Choose a time you are available')
-     .setChoices([
-         item.createChoice('Cats'),
-         item.createChoice('Dogs')
-     ]);
-
-
-  form.setDestination(FormApp.DestinationType.SPREADSHEET, ss.getId());
-  form.addTextItem().setTitle('Name').setRequired(true);
-  form.addTextItem().setTitle('Mobile number').setRequired(true);
-  for (var day in schedule) {
-    var header = form.addSectionHeaderItem().setTitle('Sessions for ' + day);
-    for (var time in schedule[day]) {
-      var item = form.addMultipleChoiceItem().setTitle(time + ' ' + day)
-          .setChoiceValues(schedule[day][time]);
-    }
-  }
+function CreateForm() {
+  UpdateFormList();
 }
 
+function UpdateFormList() {
+  var listItems = []
+  var events = getEvents();
+  for (var i = 0; i < events.length; i++) {
+    if (events[i].getTitle().match(unassignedRegexp)) {
+      label = events[i].getStartTime().toDateString() + "- - - - - - - -> Ignore this bit -> - - - - " + events[i].getId();
+      if (events[i].getTitle().match(/\(key\)/i)) {
+        label = "KEY: " + label;
+      }
+      listItems.push(label);
+    }
+  }
+  storedFormList().setChoiceValues(listItems);
+}
+
+function logMail(msg, details) {
+  MailApp.sendEmail(
+    "oakleigh.toylibrary@gmail.com",
+    msg,
+    JSON.stringify(details)
+  );
+}
+
+/*
+ *
+ * Store/retrieve which spreadsheet we're using
+ *
+ */
+function setSelectedSpreadSheet(sheet) {
+  var scriptProperties = PropertiesService.getScriptProperties();
+  scriptProperties.setProperty('SS_DOC_ID', sheet.getParent().getId());
+  scriptProperties.setProperty('SS_DOC_SHEET_NAME', sheet.getName());
+}
+
+function storedSpreadSheet() {
+  var scriptProperties = PropertiesService.getScriptProperties();
+  ssId = scriptProperties.getProperty('SS_DOC_ID');
+  name = scriptProperties.getProperty('SS_DOC_SHEET_NAME');
+  return SpreadsheetApp.openById(ssId).getSheetByName(name);
+}
+
+/*
+ *
+ * Store/retrieve which form we created
+ *
+ */
+function storedForm() {
+  var scriptProperties = PropertiesService.getScriptProperties();
+  formId = scriptProperties.getProperty('ROSTERING_FORM_ID');
+  var form
+  try {
+    form = FormApp.openById(formId);
+  } catch (e) {
+    // IDGAF
+  }
+
+  if (form) {
+    return form
+  }
+
+  // Create the form and add a multiple-choice question for each timeslot.
+  form = FormApp.create('Rostered Dates Form');
+
+  ScriptApp.newTrigger('onFormSubmit')
+    .forForm(form)
+    .onFormSubmit()
+    .create();
+
+  form.addTextItem().setTitle('Name').setRequired(true);
+  form.addTextItem().setTitle('Mobile number').setRequired(true);
+
+  scriptProperties.setProperty('ROSTERING_FORM_ID', form.getId());
+  return form;
+}
+
+function storedFormList() {
+  var scriptProperties = PropertiesService.getScriptProperties();
+  listId = scriptProperties.getProperty('GF_ROSTER_FORM_LISTID');
+
+  var listItem
+  try {
+    listItem = storedForm().getItemById(listId).asListItem();
+  } catch (e) {
+    // IDGAF
+  }
+  if (listItem) {
+    return listItem;
+  }
+  listItem = storedForm().addListItem()
+    .setTitle('Choose a time you are available')
+    .setRequired(true)
+    .setChoiceValues(["None Yet"]);
+
+  scriptProperties.setProperty('GF_ROSTER_FORM_LISTID', listItem.getId());
+
+  return listItem;
+}
+
+/*
+ *
+ * Store/retrieve date range
+ *
+ */
+function setStoredDateRange(start, end) {
+  var scriptProperties = PropertiesService.getScriptProperties();
+  // Force date-to-string conversion to use ints
+  scriptProperties.setProperty('START_DATE_RANGE', "" + (1 * start));
+  scriptProperties.setProperty('END_DATE_RANGE', "" + (1 * end));
+}
+
+function storedStartDate() {
+  var scriptProperties = PropertiesService.getScriptProperties();
+  dateStr = scriptProperties.getProperty('START_DATE_RANGE');
+  // Convert string to int by multiplication because javascript.
+  return new Date(1 * dateStr)
+}
+
+function storedEndDate() {
+  var scriptProperties = PropertiesService.getScriptProperties();
+  dateStr = scriptProperties.getProperty('END_DATE_RANGE');
+  // Convert string to int by multiplication because javascript.
+  return new Date(1 * dateStr)
+}
+
+/*
+ *
+ * Store/retrieve calendar deets
+ *
+ */
+function setSelectedCalendar(calId) {
+  var scriptProperties = PropertiesService.getScriptProperties();
+  scriptProperties.setProperty('CALENDAR_ID', calId);
+}
+
+function rosterCalendar() {
+  var scriptProperties = PropertiesService.getScriptProperties();
+  var calId = scriptProperties.getProperty('CALENDAR_ID');
+  var result = CalendarApp.getCalendarById(calId);
+  if (!result) {
+    return null;
+  }
+  return result;
+}
+
+function getEvents() {
+  return rosterCalendar().getEvents(storedStartDate(), storedEndDate());
+}
+
+var unassignedRegexp = /^Nobody/i;
+
 /**
- * A trigger-driven function that sends out calendar invitations and a
- * personalized Google Docs itinerary after a user responds to the form.
+ * A trigger-driven function that updates the calendar after a user responds to the form.
  *
  * @param {Object} e The event parameter for form submission to a spreadsheet;
  *     see https://developers.google.com/apps-script/understanding_events
  */
 function onFormSubmit(e) {
+  var responses = e.response.getItemResponses()
+  var submission = {}
+  for (var i = 0; i < responses.length; i++) {
+    submission[responses[i].getItem().getTitle()] = responses[i].getResponse()
+  }
+  // submission["Name"]
+  // submission["Mobile number"]
+  // submission["Choose a time you are available"]
+  // {
+  //   "Name":"asdfasdf",
+  //   "Mobile number":"1232354",
+  //   "Choose a time you are available":"Sat Oct 18 2014                            1m84os8msm379vdtk3glcjtlkc@google.com"
+  // }
   var user = {
-    name: e.namedValues['Name'][0],
-    email: e.namedValues['Email'][0],
-    email: e.namedValues['Timeslot'][0]
+    name: submission["Name"],
+    mobile: submission["Mobile number"],
+    timeslot: submission['Choose a time you are available']
   };
+  // logMail("Testing: Form submission happened", user);
 
-  // Grab the session data again so that we can match it to the user's choices.
-  var response = [];
-  var values = SpreadsheetApp.getActive().getSheetByName('Conference Setup')
-     .getDataRange().getValues();
-  for (var i = 1; i < values.length; i++) {
-    var session = values[i];
-    var title = session[0];
-    var day = session[1].toLocaleDateString();
-    var time = session[2].toLocaleTimeString();
-    var timeslot = time + ' ' + day;
-
-    // For every selection in the response, find the matching timeslot and title
-    // in the spreadsheet and add the session data to the response array.
-    if (e.namedValues[timeslot] && e.namedValues[timeslot] == title) {
-      response.push(session);
+  // Get a public lock on this script, because we're about to modify a shared resource.
+  var lock = LockService.getPublicLock();
+  // Wait for up to 5 seconds for other processes to finish.
+  lock.waitLock(5000);
+  try {
+    var events = getEvents();
+    var event = null;
+    for (var i = 0; i < events.length; i++) {
+      if (user.timeslot.indexOf(events[i].getId()) >= 0) {
+        event = events[i]
+        break; // Found it!
+      }
     }
+    if (!event) {
+      logMail("Form submission couldn't find event!", [e, user]);
+    } else {
+      // Update the event
+      if (event.getTitle().match(unassignedRegexp)) {
+        event.setTitle(user.name);
+        event.setDescription(user.mobile);
+      } else {
+        if (event.getTitle() === user.name) {
+          // All is good
+        } else {
+          logMail("Whoops: Two people tried to book the same slot at once", [e, user, e.getTitle()]);
+        }
+      }
+    }
+  } finally {
+    // Release the lock so that other processes can continue.
+    lock.releaseLock();
   }
-  sendInvites_(user, response);
-  sendDoc_(user, response);
+  UpdateFormList();
 }
 
-/**
- * Add the user as a guest for every session he or she selected.
- *
- * @param {Object} user An object that contains the user's name and email.
- * @param {String[][]} response An array of data for the user's session choices.
- */
-function sendInvites_(user, response) {
-  var id = ScriptProperties.getProperty('calId');
-  var cal = CalendarApp.getCalendarById(id);
-  for (var i = 0; i < response.length; i++) {
-    cal.getEventSeriesById(response[i][5]).addGuest(user.email);
-  }
-}
-
-/**
- * Create and share a personalized Google Doc that shows the user's itinerary.
- *
- * @param {Object} user An object that contains the user's name and email.
- * @param {String[][]} response An array of data for the user's session choices.
- */
-function sendDoc_(user, response) {
-  var doc = DocumentApp.create('Conference Itinerary for ' + user.name)
-      .addEditor(user.email);
-  var body = doc.getBody();
-  var table = [['Session', 'Date', 'Time', 'Location']];
-  for (var i = 0; i < response.length; i++) {
-    table.push([response[i][0], response[i][1].toLocaleDateString(),
-        response[i][2].toLocaleTimeString(), response[i][4]]);
-  }
-  body.insertParagraph(0, doc.getName())
-      .setHeading(DocumentApp.ParagraphHeading.HEADING1);
-  table = body.appendTable(table);
-  table.getRow(0).editAsText().setBold(true);
-  doc.saveAndClose();
-
-  // Email a link to the Doc as well as a PDF copy.
-  MailApp.sendEmail({
-    to: user.email,
-    subject: doc.getName(),
-    body: 'Thanks for registering! Here\'s your itinerary: ' + doc.getUrl(),
-    attachments: doc.getAs(MimeType.PDF),
-  });
-}
-
-
-
-
-
-
-
-
-
-
-
-
+var FUS1=new Date().toString().substr(25,6)+':00';
 function importEvents(e) {
-  var calendar_name = e.parameter.calendar;
   var startDate = new Date(e.parameter.start);
   var endDate = new Date(e.parameter.end);
+  setStoredDateRange(startDate, endDate); // Record these to use elsewhere.
+
+  var calendar_name = e.parameter.calendar;
   var Calendar = CalendarApp.getCalendarsByName(calendar_name);
-  var events = Calendar[0].getEvents(startDate, endDate);
+  setSelectedCalendar(Calendar[0].getId()); // Record these to use elsewhere.
+
+  var currentSheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  setSelectedSpreadSheet(currentSheet);
+
+  runImport();
+}
+
+function runImport() {
+  var startDate = storedStartDate();
+  var endDate = storedEndDate();
+
+  var events = getEvents();
 
   if (events[0]) {
     var eventarray = new Array();
@@ -152,26 +259,26 @@ function importEvents(e) {
       line = new Array();
       FUS1=new Date(events[i]).toString().substr(25,6)+':00';
       line.push(events[i].getTitle());
+      // FIXME: This doesn't preserve leading zeroes.
+      // FIXME: Twilio wants +614XX, not 04XX for SMS.
       line.push(' ' + events[i].getDescription().replace(/[^\d]/g, ''));
       line.push(Utilities.formatDate(events[i].getStartTime(), FUS1, "MMM-dd-yyyy")+' at ' +Utilities.formatDate(events[i].getEndTime(), FUS1, "HH:mm"));
       eventarray.push(line);
     }
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+
+    var sheet = storedSpreadSheet();
     sheet.getActiveRange().clear(); // get rid of whatever is already there.
     sheet.getRange(1,1,eventarray.length,eventarray[0].length).setValues(eventarray);
     sheet.setColumnWidth(1, 450);sheet.setColumnWidth(2, 150);sheet.setColumnWidth(3, 150);sheet.setColumnWidth(4, 250);sheet.setColumnWidth(5, 90);
     sheet.setFrozenRows(1);
   } else {
-    var startstring = Utilities.formatDate(e.parameter.start, FUS1, "MMM-dd-yyyy");
-    var endstring = Utilities.formatDate(e.parameter.end, FUS1, "MMM-dd-yyyy");
-    Browser.msgBox('There are no events in the calendar between ' + startstring + ' and ' + endstring + ' in calendar '+calendar_name);
+    var startstring = Utilities.formatDate(startDate, FUS1, "MMM-dd-yyyy");
+    var endstring = Utilities.formatDate(endDate, FUS1, "MMM-dd-yyyy");
+    Browser.msgBox('There are no events in the calendar between ' + startstring + ' and ' + endstring + ' in calendar ' + rosterCalendar().getName());
   }
-  var app = UiApp.getActiveApplication();
-  app.close();
-  return app;
 }
 
-function Cal_to_sheet() {
+function PopulateSheetFromCalendar() {
   var doc = SpreadsheetApp.getActiveSpreadsheet();
   var app = UiApp.createApplication().setTitle('Calendar Import').setHeight('320').setWidth('440').setStyleAttribute('background','beige');
   // Create a grid with 3 text boxes and corresponding labels
@@ -197,4 +304,8 @@ function Cal_to_sheet() {
   panel.add(button);
   app.add(panel);
   doc.show(app);
+}
+
+function InitialConfig() {
+  PopulateSheetFromCalendar();
 }
