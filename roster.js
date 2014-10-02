@@ -3,32 +3,62 @@ function onOpen() {
   var menu = [
     {name: 'Setup', functionName: 'InitialConfig'},
     {name: 'Test: Re-import Calendar', functionName: 'PopulateSheetFromCalendar'},
-    {name: 'Test: Create Form', functionName: 'CreateForm'}
+    {name: 'Test: Create Form', functionName: 'UpdateFormList'}
   ];
   SpreadsheetApp.getActive().addMenu('Rostering', menu);
 }
 
+var dropdownTitle = 'Roster Dates (choose one)';
+var dropdownHelp = "Selecting a date with the text 'Key' indicates you will hold the keys.";
+
 /**
- * Creates a Google Form that allows respondents to select which roster
+ * Creates/updates a Google Form that allows respondents to select which roster
  * sessions they can make it to.
  */
-function CreateForm() {
-  UpdateFormList();
-}
-
 function UpdateFormList() {
   var listItems = []
   var events = getEvents();
   for (var i = 0; i < events.length; i++) {
     if (events[i].getTitle().match(unassignedRegexp)) {
-      label = events[i].getStartTime().toDateString() + "- - - - - - - -> Ignore this bit -> - - - - " + events[i].getId();
-      if (events[i].getTitle().match(/\(key\)/i)) {
-        label = "KEY: " + label;
-      }
-      listItems.push(label);
+      listItems.push(eventTimeLabel(events[i]));
     }
   }
-  storedFormList().setChoiceValues(listItems);
+  // If multiple timeslots have the same value,
+  // the selection comes through as an array.
+  // Prevent this by calling uniq.
+  storedFormList()
+    .setChoiceValues(uniq(listItems))
+    .setTitle(dropdownTitle)
+    .setRequired(true)
+    .setHelpText(dropdownHelp);
+
+    // These are the available dates for the forecoming term. Please choose one.
+}
+
+function uniq(array) {
+  if (array == null) return [];
+  var result = [];
+  var seen = [];
+  for (var i = 0, length = array.length; i < length; i++) {
+    var value = array[i];
+    if (result.indexOf(value) < 0) {
+      result.push(value);
+    }
+  }
+  return result;
+};
+
+var keyRegex = /Key\)?$/i;
+
+function eventTimeLabel(event) {
+  label = event.getStartTime().toDateString();
+  if (! event.getTitle().match(unassignedRegexp)) {
+    label = "(TAKEN)" + label
+  }
+  if (event.getTitle().match(keyRegex)) {
+    label = "KEY: " + label;
+  }
+  return label;
 }
 
 function logMail(msg, details) {
@@ -105,8 +135,9 @@ function storedFormList() {
     return listItem;
   }
   listItem = storedForm().addListItem()
-    .setTitle('Choose a time you are available')
+    .setTitle(dropdownTitle)
     .setRequired(true)
+    .setHelpText(dropdownHelp)
     .setChoiceValues(["None Yet"]);
 
   scriptProperties.setProperty('GF_ROSTER_FORM_LISTID', listItem.getId());
@@ -178,20 +209,12 @@ function onFormSubmit(e) {
   for (var i = 0; i < responses.length; i++) {
     submission[responses[i].getItem().getTitle()] = responses[i].getResponse()
   }
-  // submission["Name"]
-  // submission["Mobile number"]
-  // submission["Choose a time you are available"]
-  // {
-  //   "Name":"asdfasdf",
-  //   "Mobile number":"1232354",
-  //   "Choose a time you are available":"Sat Oct 18 2014                            1m84os8msm379vdtk3glcjtlkc@google.com"
-  // }
+
   var user = {
     name: submission["Name"],
     mobile: submission["Mobile number"],
-    timeslot: submission['Choose a time you are available']
+    timeslot: submission[dropdownTitle]
   };
-  // logMail("Testing: Form submission happened", user);
 
   // Get a public lock on this script, because we're about to modify a shared resource.
   var lock = LockService.getPublicLock();
@@ -201,7 +224,7 @@ function onFormSubmit(e) {
     var events = getEvents();
     var event = null;
     for (var i = 0; i < events.length; i++) {
-      if (user.timeslot.indexOf(events[i].getId()) >= 0) {
+      if (user.timeslot === eventTimeLabel(events[i])) {
         event = events[i]
         break; // Found it!
       }
@@ -211,7 +234,15 @@ function onFormSubmit(e) {
     } else {
       // Update the event
       if (event.getTitle().match(unassignedRegexp)) {
-        event.setTitle(user.name);
+        if (event.getTitle().match(keyRegex)) {
+          event.setTitle(user.name + " - Key");
+        } else {
+          event.setTitle(user.name);
+        }
+        // Valid AU mobile numbers only have digits in them.
+        user.mobile = user.mobile.replace(/[^\d]/g, '');
+        // Twilio wants +614XX, not 04XX for SMS.
+        user.mobile = user.mobile.replace(/^04/, '+614');
         event.setDescription(user.mobile);
       } else {
         if (event.getTitle() === user.name) {
@@ -224,8 +255,8 @@ function onFormSubmit(e) {
   } finally {
     // Release the lock so that other processes can continue.
     lock.releaseLock();
+    UpdateFormList();
   }
-  UpdateFormList();
 }
 
 var FUS1=new Date().toString().substr(25,6)+':00';
@@ -259,9 +290,9 @@ function runImport() {
       line = new Array();
       FUS1=new Date(events[i]).toString().substr(25,6)+':00';
       line.push(events[i].getTitle());
-      // FIXME: This doesn't preserve leading zeroes.
-      // FIXME: Twilio wants +614XX, not 04XX for SMS.
-      line.push(' ' + events[i].getDescription().replace(/[^\d]/g, ''));
+
+      mobile = events[i].getDescription();
+      line.push(mobile);
       line.push(Utilities.formatDate(events[i].getStartTime(), FUS1, "MMM-dd-yyyy")+' at ' +Utilities.formatDate(events[i].getEndTime(), FUS1, "HH:mm"));
       eventarray.push(line);
     }
