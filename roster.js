@@ -53,10 +53,17 @@ var keyRegex = /Key\)?$/i;
 function eventTimeLabel(event) {
   label = event.getStartTime().toDateString();
   if (! event.getTitle().match(unassignedRegexp)) {
-    label = "(TAKEN)" + label
+    label = Utilities.formatDate(event.getStartTime(), FUS1, "EEEEE, d MMMMM") + "(TAKEN)"
   }
-  if (event.getTitle().match(keyRegex)) {
-    label = "KEY: " + label;
+  else if (event.getTitle().match(keyRegex)) {
+    label = Utilities.formatDate(event.getStartTime(), FUS1, "EEEEE, d MMMMM") + " - Key Person";
+  }
+  else if (event.getTitle().match(commRegex)) {
+    label = Utilities.formatDate(event.getStartTime(), FUS1, "EEEEE, d MMMMM") + " - Committee";
+  }
+  else
+  {
+    label = Utilities.formatDate(event.getStartTime(), FUS1, "EEEEE, d MMMMM")
   }
   return label;
 }
