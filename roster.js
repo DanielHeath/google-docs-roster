@@ -244,7 +244,11 @@ function onFormSubmit(e) {
       if (event.getTitle().match(unassignedRegexp)) {
         if (event.getTitle().match(keyRegex)) {
           event.setTitle(user.name + " - Key");
-        } else {
+        }
+        else if (event.getTitle().match(commRegex)) {
+          event.setTitle(user.name + " - Comm");
+        }
+        else {
           event.setTitle(user.name);
         }
         // Valid AU mobile numbers only have digits in them.
