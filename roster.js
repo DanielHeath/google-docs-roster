@@ -121,7 +121,7 @@ function storedForm() {
     .onFormSubmit()
     .create();
 
-  form.addTextItem().setTitle('Name').setRequired(true);
+  form.addTextItem().setTitle('Full Name').setRequired(true);
   form.addTextItem().setTitle('Mobile number').setRequired(true);
 
   scriptProperties.setProperty('ROSTERING_FORM_ID', form.getId());
@@ -218,7 +218,7 @@ function onFormSubmit(e) {
   }
 
   var user = {
-    name: submission["Name"],
+    name: submission["Full Name"],
     mobile: submission["Mobile number"],
     timeslot: submission[dropdownTitle]
   };
