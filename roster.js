@@ -49,6 +49,7 @@ function uniq(array) {
 };
 
 var keyRegex = /Key\)?$/i;
+var commRegex = /comm\)?$/i;
 
 function eventTimeLabel(event) {
   label = event.getStartTime().toDateString();
