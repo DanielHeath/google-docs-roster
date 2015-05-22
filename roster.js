@@ -124,6 +124,9 @@ function storedForm() {
 
   form.addTextItem().setTitle('Full Name').setRequired(true);
   form.addTextItem().setTitle('Mobile number').setRequired(true);
+  form.addTextItem().setTitle('Member Number').setRequired(true);
+  form.addTextItem().setTitle('Email').setRequired(false);
+
 
   scriptProperties.setProperty('ROSTERING_FORM_ID', form.getId());
   return form;
@@ -221,6 +224,8 @@ function onFormSubmit(e) {
   var user = {
     name: submission["Full Name"],
     mobile: submission["Mobile number"],
+    number: submission["Member Number"],
+    email: submission["Email"],
     timeslot: submission[dropdownTitle]
   };
 
@@ -256,6 +261,11 @@ function onFormSubmit(e) {
         // Twilio wants +614XX, not 04XX for SMS.
         user.mobile = user.mobile.replace(/^04/, '+614');
         event.setDescription(user.mobile);
+        event.setTag('member_name'     , user.name     );
+        event.setTag('member_mobile'   , user.mobile   );
+        event.setTag('member_email'    , user.email   );
+        event.setTag('member_number'   , user.number   );
+
       } else {
         if (event.getTitle() === user.name) {
           // All is good
@@ -296,18 +306,34 @@ function runImport() {
 
   if (events[0]) {
     var eventarray = new Array();
-    var line = new Array();
-    line.push('Member Name','Mobile', 'Time');
-    eventarray.push(line);
-    for (var i = 0; i < events.length; i++) {
-      line = new Array();
-      FUS1=new Date(events[i]).toString().substr(25,6)+':00';
-      line.push(events[i].getTitle());
 
-      mobile = events[i].getDescription();
-      line.push(mobile);
-      line.push(Utilities.formatDate(events[i].getStartTime(), FUS1, "MMM-dd-yyyy")+' at ' +Utilities.formatDate(events[i].getEndTime(), FUS1, "HH:mm"));
-      eventarray.push(line);
+    eventarray.push(['Member Name', 'Mobile', 'Email', 'Member No', 'Time', 'Date']);
+    for (var i = 0; i < events.length; i++) {
+      var timezone = events[i].getStartTime().toString().substr(25,6)+':00';
+
+      // TODO: For terms which started after
+      // tags were implemented, we can stop
+      // using the event title to
+      // store the members name
+      // and instead use the tags
+      var member_name = events[i].getTitle();
+      // events[i].getTag('member_name');
+
+      // TODO: For terms which started after
+      // tags were implemented, we can stop
+      // using the event description to
+      // store the members mobile number
+      // and instead use the tags
+      var mobile = events[i].getDescription();
+      // events[i].getTag('member_mobile');
+
+      var member_number = events[i].getTag('member_number');
+      var member_email = events[i].getTag('member_email');
+      var time = Utilities.formatDate(events[i].getStartTime(), timezone, "MMM-dd-yyyy 'at' HH:mm")
+      var date = Utilities.formatDate(events[i].getStartTime(), timezone, "yyyy-MM-dd HH:mm:ss")
+      eventarray.push([
+        member_name, mobile, member_email, member_number, time, date
+      ]);
     }
 
     var sheet = storedSpreadSheet();
